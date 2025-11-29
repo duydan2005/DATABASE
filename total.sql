@@ -61,7 +61,7 @@ CREATE TABLE Store (
     Mo_ta NVARCHAR(255),
     Ngay_tao DATETIME DEFAULT GETDATE(),
     Thong_tin_phap_ly NVARCHAR(MAX),
-    CONSTRAINT FK_Store_Seller FOREIGN KEY (Seller_id) REFERENCES Seller(User_id)
+    CONSTRAINT FK_Store_Seller FOREIGN KEY (Seller_id) REFERENCES Seller(User_id) 
 );
 GO
 
@@ -162,7 +162,7 @@ CREATE TABLE Order_item (
     
     PRIMARY KEY (Order_id, Item_id),
     CONSTRAINT FK_Order_item_Order FOREIGN KEY (Order_id) REFERENCES [Order](Order_id) ON DELETE CASCADE,
-    CONSTRAINT FK_Order_item_Variant FOREIGN KEY (Product_id, SKU) REFERENCES Variant(Product_id, SKU)
+    CONSTRAINT FK_Order_item_Variant FOREIGN KEY (Product_id, SKU) REFERENCES Variant(Product_id, SKU) ON UPDATE CASCADE
 );
 GO
 
@@ -187,7 +187,7 @@ CREATE TABLE Ap_dung (
     
     PRIMARY KEY (Order_id, Item_id, Coupon_id),
     CONSTRAINT FK_Ap_dung_Order_item FOREIGN KEY (Order_id, Item_id) REFERENCES Order_item(Order_id, Item_id) ON DELETE CASCADE,
-    CONSTRAINT FK_Ap_dung_Coupon FOREIGN KEY (Coupon_id) REFERENCES Coupon(Coupon_id) ON DELETE CASCADE
+    CONSTRAINT FK_Ap_dung_Coupon FOREIGN KEY (Coupon_id) REFERENCES Coupon(Coupon_id) 
 );
 GO
 
