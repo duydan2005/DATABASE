@@ -1,15 +1,14 @@
--- Trigger_Requirement.sql
-SET NOCOUNT ON;
-GO
 
 USE ShopeeDB;
 GO
+-- Chứa 2 Trigger kiểm tra coupon khi Áp dụng và khi thay đổi Order_item.
 
-IF OBJECT_ID('dbo.trg_ApDung_CheckCoupon_AfterInsertUpdate','TR') IS NOT NULL
-	DROP TRIGGER dbo.trg_ApDung_CheckCoupon_AfterInsertUpdate;
+-- Trigger: validate coupons when Ap_dung changes
+IF OBJECT_ID('dbo.trg_ApDung_CheckCoupon_AfterIU','TR') IS NOT NULL
+	DROP TRIGGER dbo.trg_ApDung_CheckCoupon_AfterIU;
 GO
 
-CREATE TRIGGER dbo.trg_ApDung_CheckCoupon_AfterInsertUpdate
+CREATE TRIGGER dbo.trg_ApDung_CheckCoupon_AfterIU
 ON dbo.Ap_dung
 AFTER INSERT, UPDATE
 AS
@@ -36,18 +35,19 @@ BEGIN
 		WHERE t.OrderTotal < c.Dieu_kien_gia_toi_thieu
 	)
 	BEGIN
-		RAISERROR (N'Coupon cannot be applied: order total less than coupon minimum requirement.', 16, 1);
+		RAISERROR (N'Coupon không khả dụng: tổng đơn hàng nhỏ hơn yêu cầu tối thiểu.', 16, 1);
 		ROLLBACK TRANSACTION;
 		RETURN;
 	END
 END;
 GO
 
-IF OBJECT_ID('dbo.trg_OrderItem_CheckCoupon_AfterDML','TR') IS NOT NULL
-	DROP TRIGGER dbo.trg_OrderItem_CheckCoupon_AfterDML;
+-- Trigger: validate coupons when Order_item changes
+IF OBJECT_ID('dbo.trg_OrderItem_CheckCoupon_AfterIUD','TR') IS NOT NULL
+	DROP TRIGGER dbo.trg_OrderItem_CheckCoupon_AfterIUD;
 GO
 
-CREATE TRIGGER dbo.trg_OrderItem_CheckCoupon_AfterDML
+CREATE TRIGGER dbo.trg_OrderItem_CheckCoupon_AfterIUD
 ON dbo.Order_item
 AFTER INSERT, UPDATE, DELETE
 AS
@@ -72,10 +72,12 @@ BEGIN
 		WHERE t.OrderTotal < c.Dieu_kien_gia_toi_thieu
 	)
 	BEGIN
-		RAISERROR (N'Modifying order items violates coupon minimum requirement; operation canceled.', 16, 1);
+		RAISERROR (N'Coupon không khả dụng: tổng đơn hàng nhỏ hơn yêu cầu tối thiểu.', 16, 1);
 		ROLLBACK TRANSACTION;
 		RETURN;
 	END
 END;
 GO
+
+
 
