@@ -16,7 +16,8 @@ SET NOCOUNT ON;
 -- 3) Test 1: try to apply coupon (expect failure)
 -- 4) Test 2: increase order total then apply coupon (expect success)
 -- 5) Test 3: reduce total while coupon applied (expect failure)
--- 6) Cleanup
+-- 6) Test 4: increase total but still below new coupon minimum then apply (expect failure)
+-- 7) Cleanup
 
 DECLARE @SellerUser INT, @BuyerUser INT, @Store INT, 
 		@Product INT, @VariantSKU NVARCHAR(100),
