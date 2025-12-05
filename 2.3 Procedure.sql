@@ -8,50 +8,60 @@
 
 GO
 CREATE OR ALTER PROCEDURE sp_TimKiemSanPham_CuaHang
-    @Store_id INT,                                    -- ID cửa hàng (bắt buộc)
-    @Ten_san_pham NVARCHAR(200) = NULL,              -- Tìm theo tên (tùy chọn)
-    @Ten_danh_muc NVARCHAR(100) = NULL,              -- Lọc theo tên danh mục (tùy chọn)
-    @Gia_tu DECIMAL(18,2) = NULL,                    -- Lọc giá từ
-    @Gia_den DECIMAL(18,2) = NULL,                   -- Lọc giá đến
-    @Sap_xep VARCHAR(50) = 'Ngay_dang_DESC'          -- Sắp xếp: Ngay_dang_DESC/ASC, Ten_ASC/DESC, Gia_ASC/DESC
+    @Store_id INT,
+    @Ten_san_pham NVARCHAR(200) = NULL,
+    @Ten_danh_muc NVARCHAR(100) = NULL,
+    @Gia_tu DECIMAL(18,2) = NULL,
+    @Gia_den DECIMAL(18,2) = NULL,
+    @Sap_xep VARCHAR(50) = 'Ngay_dang_DESC'
 AS
 BEGIN
     SET NOCOUNT ON;
+
+    -- ============================================================
+    -- 1. CHUẨN HÓA DỮ LIỆU ĐẦU VÀO (XỬ LÝ CHUỖI RỖNG)
+    -- ============================================================
+    -- Nếu truyền vào chuỗi rỗng '', ép về NULL để bỏ qua bộ lọc
+    IF @Ten_san_pham = '' SET @Ten_san_pham = NULL;
+    IF @Ten_danh_muc = '' SET @Ten_danh_muc = NULL;
     
-    -- Kiểm tra Store_id có tồn tại không
+    -- Xử lý sắp xếp mặc định nếu truyền rỗng
+    IF @Sap_xep IS NULL OR @Sap_xep = '' SET @Sap_xep = 'Ngay_dang_DESC';
+
+    -- Xử lý giá: Nếu Gia_tu truyền vào NULL, coi như là 0
+    IF @Gia_tu IS NULL SET @Gia_tu = 0;
+    -- Nếu Gia_den truyền vào NULL hoặc = 0 (trường hợp user ko nhập), coi như max vô cực
+    IF @Gia_den IS NULL OR @Gia_den = 0 SET @Gia_den = 999999999999; 
+
+    -- ============================================================
+    -- 2. VALIDATION CƠ BẢN
+    -- ============================================================
+    
+    -- Kiểm tra Store_id
     IF NOT EXISTS (SELECT 1 FROM Store WHERE Store_id = @Store_id)
     BEGIN
         RAISERROR(N'Lỗi: Không tìm thấy cửa hàng với Store_id = %d', 16, 1, @Store_id);
         RETURN;
     END
     
-    -- Kiểm tra Ten_danh_muc nếu có
+    -- Chỉ kiểm tra danh mục nểu @Ten_danh_muc KHÁC NULL (đã xử lý rỗng ở trên)
     IF @Ten_danh_muc IS NOT NULL AND NOT EXISTS (SELECT 1 FROM Category WHERE Ten LIKE N'%' + @Ten_danh_muc + '%')
     BEGIN
         RAISERROR(N'Lỗi: Không tìm thấy danh mục có chứa từ khóa "%s"', 16, 1, @Ten_danh_muc);
         RETURN;
     END
-    
-    -- Kiểm tra tham số giá hợp lệ
-    IF (@Gia_tu IS NOT NULL AND @Gia_tu < 0)
-    BEGIN
-        RAISERROR(N'Lỗi: Giá từ phải >= 0', 16, 1);
-        RETURN;
-    END
-    
-    IF (@Gia_den IS NOT NULL AND @Gia_den < 0)
-    BEGIN
-        RAISERROR(N'Lỗi: Giá đến phải >= 0', 16, 1);
-        RETURN;
-    END
-    
-    IF (@Gia_tu IS NOT NULL AND @Gia_den IS NOT NULL AND @Gia_tu > @Gia_den)
+
+    -- Logic giá đã được xử lý ở bước 1 (gán mặc định) nên khó bị lỗi logic < 0, 
+    -- nhưng vẫn giữ check logic cơ bản để an toàn
+    IF @Gia_tu > @Gia_den
     BEGIN
         RAISERROR(N'Lỗi: Giá từ không được lớn hơn giá đến', 16, 1);
         RETURN;
     END
-    
-    -- Truy vấn chính với JOIN từ nhiều bảng
+
+    -- ============================================================
+    -- 3. TRUY VẤN CHÍNH
+    -- ============================================================
     SELECT 
         p.Product_id,
         p.Ten_san_pham,
@@ -61,73 +71,58 @@ BEGIN
         p.Trang_thai_dang,
         p.Ngay_dang,
         
-        -- Thông tin từ bảng Image (lấy ảnh đầu tiên)
+        -- Lấy ảnh đại diện
         (SELECT TOP 1 Duong_dan_anh 
          FROM [Image] 
          WHERE Product_id = p.Product_id 
          ORDER BY Image_id) AS Anh_dai_dien,
         
-        -- Thông tin từ bảng Category (lấy tên category đầu tiên nếu có nhiều)
+        -- Lấy tên danh mục
         (SELECT TOP 1 c.Ten 
          FROM Thuoc_ve tv 
          INNER JOIN Category c ON tv.Category_id = c.Category_id
          WHERE tv.Product_id = p.Product_id) AS Ten_danh_muc,
         
-        -- Thông tin tổng hợp từ bảng Variant (aggregate functions)
+        -- Aggregate dữ liệu Variant
         COUNT(DISTINCT v.SKU) AS So_luong_variant,
         MIN(v.Gia_ban) AS Gia_thap_nhat,
         MAX(v.Gia_ban) AS Gia_cao_nhat,
         SUM(v.So_luong_ton_kho) AS Tong_ton_kho,
         
-        -- Thông tin đánh giá trung bình
+        -- Đánh giá
         AVG(CAST(dg.So_sao AS FLOAT)) AS Diem_danh_gia_TB,
         COUNT(DISTINCT dg.Order_id) AS So_luot_danh_gia
         
     FROM Product p
-    -- JOIN với Variant (bắt buộc vì cần thông tin giá và tồn kho)
     LEFT JOIN Variant v ON p.Product_id = v.Product_id
-    
-    -- JOIN với Thuoc_ve và Category (để lọc theo danh mục)
+    -- Join Category để lọc (nếu cần)
     LEFT JOIN Thuoc_ve tv ON p.Product_id = tv.Product_id
     LEFT JOIN Category c ON tv.Category_id = c.Category_id
-    
-    -- JOIN với Danh_gia (để tính điểm đánh giá)
     LEFT JOIN Danh_gia dg ON p.Product_id = dg.Product_id
     
     WHERE p.Store_id = @Store_id
-        -- Điều kiện WHERE với các filter
+        -- Logic lọc tên (đã ép về NULL nếu rỗng)
         AND (@Ten_san_pham IS NULL OR p.Ten_san_pham LIKE N'%' + @Ten_san_pham + '%')
+        -- Logic lọc danh mục
         AND (@Ten_danh_muc IS NULL OR c.Ten LIKE N'%' + @Ten_danh_muc + '%')
     
     GROUP BY 
         p.Product_id, p.Ten_san_pham, p.Mo_ta_chi_tiet, 
         p.Tinh_trang, p.Trong_luong, p.Trang_thai_dang, p.Ngay_dang
     
-    -- HAVING để lọc theo giá (sau khi đã tính MIN/MAX)
     HAVING 
-        (@Gia_tu IS NULL OR MIN(v.Gia_ban) >= @Gia_tu)
-        AND (@Gia_den IS NULL OR MAX(v.Gia_ban) <= @Gia_den)
+        -- Logic lọc giá: Vì LEFT JOIN nên nếu không có variant, MIN(v.Gia_ban) là NULL. 
+        -- Ta dùng ISNULL để xử lý trường hợp sản phẩm chưa có giá (coi như giá 0)
+        (ISNULL(MIN(v.Gia_ban), 0) >= @Gia_tu)
+        AND (ISNULL(MAX(v.Gia_ban), 0) <= @Gia_den)
     
-    -- ORDER BY động dựa vào tham số
     ORDER BY 
-        CASE 
-            WHEN @Sap_xep = 'Ngay_dang_DESC' THEN p.Ngay_dang
-        END DESC,
-        CASE 
-            WHEN @Sap_xep = 'Ngay_dang_ASC' THEN p.Ngay_dang
-        END ASC,
-        CASE 
-            WHEN @Sap_xep = 'Ten_ASC' THEN p.Ten_san_pham
-        END ASC,
-        CASE 
-            WHEN @Sap_xep = 'Ten_DESC' THEN p.Ten_san_pham
-        END DESC,
-        CASE 
-            WHEN @Sap_xep = 'Gia_ASC' THEN MIN(v.Gia_ban)
-        END ASC,
-        CASE 
-            WHEN @Sap_xep = 'Gia_DESC' THEN MAX(v.Gia_ban)
-        END DESC;
+        CASE WHEN @Sap_xep = 'Ngay_dang_DESC' THEN p.Ngay_dang END DESC,
+        CASE WHEN @Sap_xep = 'Ngay_dang_ASC' THEN p.Ngay_dang END ASC,
+        CASE WHEN @Sap_xep = 'Ten_ASC' THEN p.Ten_san_pham END ASC,
+        CASE WHEN @Sap_xep = 'Ten_DESC' THEN p.Ten_san_pham END DESC,
+        CASE WHEN @Sap_xep = 'Gia_ASC' THEN MIN(v.Gia_ban) END ASC,
+        CASE WHEN @Sap_xep = 'Gia_DESC' THEN MAX(v.Gia_ban) END DESC;
 END;
 GO
 
